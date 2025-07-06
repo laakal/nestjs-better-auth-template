@@ -34,8 +34,8 @@ export class AppController {
   @Post('/cats')
   @Public()
   sayHello(
-    @Session() session: UserSession,
-    @UserId() userId: string,
+    @Session() session: UserSession | undefined,
+    @UserId() userId: string | undefined,
     @Body() body: any,
   ): { message: string } {
     console.log({
