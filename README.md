@@ -8,23 +8,22 @@ This project demonstrates how to integrate [Better Auth](https://better-auth.dev
 
 ## 📑 Table of Contents
 
-- [NestJS with Better Auth Example](#nestjs-with-better-auth-example)
-  - [📑 Table of Contents](#-table-of-contents)
-  - [🧰 Project Information](#-project-information)
-  - [✅ Prerequisites](#-prerequisites)
-  - [⚙️ Project Setup](#️-project-setup)
-  - [🚀 Running the Application](#-running-the-application)
-  - [🔐 Authentication Configuration](#-authentication-configuration)
-  - [🌐 Cross-Domain Session Configuration](#-cross-domain-session-configuration)
-  - [🛡️ Protecting Routes](#️-protecting-routes)
-  - [🌐 Global API Prefix](#-global-api-prefix)
-  - [🧩 Frontend Integration (Next.js)](#-frontend-integration-nextjs)
-  - [🔁 Redirect After Sign-in](#-redirect-after-sign-in)
-  - [🔒 Session Handling in Next.js](#-session-handling-in-nextjs)
-    - [Middleware (`middleware.ts`)](#middleware-middlewarets)
-    - [Server-side Rendering (`page.tsx`)](#server-side-rendering-pagetsx)
-    - [Client Component Example](#client-component-example)
-  - [🧪 Tips](#-tips)
+- [🧰 Project Information](#-project-information)
+- [✅ Prerequisites](#-prerequisites)
+- [⚙️ Project Setup](#️-project-setup)
+- [🚀 Running the Application](#-running-the-application)
+- [🔐 Authentication Configuration](#-authentication-configuration)
+- [🗄️ Database Migrations](#-database-migrations)
+- [🌐 Cross-Domain Session Configuration](#-cross-domain-session-configuration)
+- [🛡️ Protecting Routes](#️-protecting-routes)
+- [🌐 Global API Prefix](#-global-api-prefix)
+- [🧩 Frontend Integration (Next.js)](#-frontend-integration-nextjs)
+- [🔁 Redirect After Sign-in](#-redirect-after-sign-in)
+- [🔒 Session Handling in Next.js](#-session-handling-in-nextjs)
+  - [Middleware](#middleware-middlewarets)
+  - [Server-side Rendering](#server-side-rendering-pagetsx)
+  - [Client Component Example](#client-component-example)
+- [🧪 Tips](#-tips)
 
 ---
 
@@ -143,6 +142,28 @@ static forRoot(options: AuthModuleOptions = {}) {
 - Email/Password
 
 Add more providers via `better-auth/providers/*`.
+
+---
+
+## 🗄️ Database Migrations
+
+If you use SQL databases (Postgres, MySQL, SQLite) instead of MongoDB, use the Better Auth CLI to create/apply the schema.
+
+- Step 1: Move your Better Auth config options into a standalone file (no NestJS bootstrap), for example `src/auth/auth-config.ts`.
+  - Keep only the Better Auth configuration object. Avoid path aliases; use relative imports so the CLI can resolve modules.
+- Step 2 (Kysely/built-in adapter): Apply the schema directly:
+  - `npx @better-auth/cli@latest migrate --config src/auth/auth-config.ts`
+  - Add `--yes` to skip prompts.
+- Step 2 (Prisma/Drizzle): Generate the schema, then run your ORM migrations:
+  - `npx @better-auth/cli@latest generate --config src/auth/auth-config.ts`
+  - Prisma: `npx prisma migrate dev -n better_auth_init`
+  - Drizzle: run your drizzle-kit generate/push flow to apply the generated schema.
+
+Notes
+- Ensure your database connection env (e.g., `DATABASE_URL`) points to your Postgres/MySQL/SQLite instance.
+- If the CLI can’t resolve imports, switch to relative paths in your config file (per docs).
+
+Docs: https://www.better-auth.com/docs/concepts/cli
 
 ---
 
