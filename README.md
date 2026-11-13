@@ -2,7 +2,9 @@
 
 This project demonstrates how to integrate [Better Auth](https://better-auth.dev/) into a NestJS application for streamlined and flexible authentication.
 
-**Special thanks to [ThallesP](https://github.com/ThallesP) for their work on Better Auth!**
+The NestJS integration is provided by [`@thallesp/nestjs-better-auth`](https://github.com/ThallesP/nestjs-better-auth).
+
+**Special thanks to [ThallesP](https://github.com/ThallesP) for their work on it!**
 
 ---
 
@@ -31,9 +33,13 @@ This project demonstrates how to integrate [Better Auth](https://better-auth.dev
 
 ## 🧰 Project Information
 
-- **Framework:** NestJS v11  
-- **HTTP Framework:** Express v5 (integrated in NestJS)  
-- **Database Adapter:** MongoDB  
+- **Framework:** NestJS v12 (ESM, TypeScript 6)
+- **Auth:** Better Auth v1.7 (also verified against v1.8 beta) via `@thallesp/nestjs-better-auth` v2
+- **HTTP Framework:** Express v5 (integrated in NestJS)
+- **Database Adapter:** MongoDB
+- **Tests:** Vitest
+
+> The project is an ES module (`"type": "module"`), which is the NestJS 12 default. Relative imports need a `.js` extension, e.g. `import { AppModule } from './app.module.js'`.
 
 ---
 
@@ -41,7 +47,7 @@ This project demonstrates how to integrate [Better Auth](https://better-auth.dev
 
 Ensure the following are installed:
 
-- **Node.js** (compatible with NestJS v11)
+- **Node.js** v22.12+ (v22.22.3+ or v24.15+ to use the `nest generate` CLI commands)
 - **npm** (comes with Node.js)
 - **MongoDB** (running instance required)
 
@@ -63,6 +69,8 @@ Ensure the following are installed:
 
    ```env
    MONGODB_URI="YOUR_MONGODB_CONNECTION_STRING"
+   BETTER_AUTH_SECRET="A_RANDOM_SECRET" # openssl rand -base64 32
+   BETTER_AUTH_URL="http://localhost:3000" # public URL of this API
    GITHUB_CLIENT_ID="YOUR_GITHUB_APPLICATION_CLIENT_ID"
    GITHUB_CLIENT_SECRET="YOUR_GITHUB_APPLICATION_CLIENT_SECRET"
    GOOGLE_CLIENT_ID="YOUR_GOOGLE_APPLICATION_CLIENT_ID"
@@ -85,20 +93,32 @@ Ensure the following are installed:
 - **Production Mode**
 
   ```bash
-  npm run start
+  npm run build
+  npm run start:prod
+  ```
+
+- **Tests**
+
+  ```bash
+  npm test          # unit tests
+  npm run test:e2e  # e2e tests
   ```
 
 ---
 
 ## 🔐 Authentication Configuration
 
-The core Better Auth config is in `src/auth/auth.module.ts`:
+The core Better Auth config is in `src/auth/auth.ts`:
 
 ```ts
-static forRoot(options: AuthModuleOptions = {}) {
-  const auth = betterAuth({
-    trustedOrigins,
-    database: mongodbAdapter(db),
+export function createAuth(env: NodeJS.ProcessEnv = process.env) {
+  const client = new MongoClient(env.MONGODB_URI as string);
+
+  return betterAuth({
+    baseURL: env.BETTER_AUTH_URL,
+    secret: env.BETTER_AUTH_SECRET,
+    trustedOrigins: parseTrustedOrigins(env.TRUSTED_ORIGINS),
+    database: mongodbAdapter(client.db()),
     emailAndPassword: {
       enabled: true,
     },
@@ -112,30 +132,31 @@ static forRoot(options: AuthModuleOptions = {}) {
         role: {
           type: 'string',
           defaultValue: 'user',
+          input: false,
         },
       },
     },
-    account: {
-      modelName: 'accounts',
-    },
-    verification: {
-      modelName: 'verifications',
-    },
-    socialProviders: {
-      github: {
-        clientId: process.env.GITHUB_CLIENT_ID!,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      },
-      google: {
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      },
-    },
+    // ...accounts, verifications, socialProviders (GitHub, Google)
+    hooks: {},
   });
-
-  // ...
 }
+
+export type Auth = ReturnType<typeof createAuth>;
 ```
+
+It is wired into NestJS in `src/app.module.ts`. `createAuth` is a factory so the environment is read after `ConfigModule` has loaded `.env`:
+
+```ts
+AuthModule.forRootAsync({
+  imports: [ConfigModule],
+  useFactory: () => ({
+    auth: createAuth(),
+    disableTrustedOriginsCors: true, // CORS is configured in main.ts
+  }),
+}),
+```
+
+`AuthModule` mounts the Better Auth handler on `/api/auth/*`, registers a global `AuthGuard` and exports `AuthService` (inject it to call `authService.api.*`). Hooks can be added with the `@Hook()`, `@BeforeHook()` and `@AfterHook()` decorators — see the [library README](https://github.com/ThallesP/nestjs-better-auth#readme).
 
 **Supported Providers:**
 
@@ -143,7 +164,7 @@ static forRoot(options: AuthModuleOptions = {}) {
 - GitHub
 - Email/Password
 
-Add more providers via `better-auth/providers/*`.
+Add more providers under `socialProviders` — see the [Better Auth docs](https://www.better-auth.com/docs/concepts/oauth).
 
 ---
 
@@ -151,13 +172,21 @@ Add more providers via `better-auth/providers/*`.
 
 If you use SQL databases (Postgres, MySQL, SQLite) instead of MongoDB, use the Better Auth CLI to create/apply the schema.
 
-- Step 1: Move your Better Auth config options into a standalone file (no NestJS bootstrap), for example `src/auth/auth-config.ts`.
-  - Keep only the Better Auth configuration object. Avoid path aliases; use relative imports so the CLI can resolve modules.
+- Step 1: The CLI needs a file that exports the instance as `auth`. Create one next to the factory, for example `src/auth/auth-config.ts`:
+
+  ```ts
+  import 'dotenv/config';
+  import { createAuth } from './auth.js';
+
+  export const auth = createAuth();
+  ```
+
+  - Avoid path aliases; use relative imports so the CLI can resolve modules.
 - Step 2 (Kysely/built-in adapter): Apply the schema directly:
-  - `npx @better-auth/cli@latest migrate --config src/auth/auth-config.ts`
+  - `npx auth@latest migrate --config src/auth/auth-config.ts`
   - Add `--yes` to skip prompts.
 - Step 2 (Prisma/Drizzle): Generate the schema, then run your ORM migrations:
-  - `npx @better-auth/cli@latest generate --config src/auth/auth-config.ts`
+  - `npx auth@latest generate --config src/auth/auth-config.ts`
   - Prisma: `npx prisma migrate dev -n better_auth_init`
   - Drizzle: run your drizzle-kit generate/push flow to apply the generated schema.
 
@@ -171,7 +200,7 @@ Docs: https://www.better-auth.com/docs/concepts/cli
 
 ## 🌐 Cross-Domain Session Configuration
 
-The application supports cross-domain cookies for production environments, allowing session sharing across subdomains. This is configured in `src/auth/auth.module.ts`:
+The application supports cross-domain cookies for production environments, allowing session sharing across subdomains. This is configured in `src/auth/auth.ts`:
 
 ```ts
 ...(isProd
@@ -179,7 +208,7 @@ The application supports cross-domain cookies for production environments, allow
       advanced: {
         crossSubDomainCookies: {
           enabled: true,
-          domain: process.env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
+          domain: env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
         },
         defaultCookieAttributes: {
           secure: true,
@@ -211,28 +240,41 @@ For more details, refer to [Better Auth Cookies Documentation](https://www.bette
 
 ## 🛡️ Protecting Routes
 
-See `app.controller.ts` for usage of the `AuthGuard`:
+`AuthModule` registers a global `AuthGuard`, so **every route is protected by default** — no `@UseGuards()` needed. Opt out per route or controller with `@AllowAnonymous()` (or `@OptionalAuth()`). See `app.controller.ts`:
 
 ```ts
 @Controller()
-@UseGuards(AuthGuard)
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  // Protected: responds 401 without a session
   @Get('/cats')
-  getCats(@Session() session: UserSession, @UserId() userId: string, @Body() body: any) {
-    console.log({ session, userId, body });
-    return { message: this.appService.getCat() };
+  getCats(@Session() session: UserSession<Auth>, @UserId() userId: string) {
+    return {
+      message: this.appService.getCat(),
+      userId,
+      role: session.user.role, // typed from `additionalFields`
+    };
   }
 
+  // Public: the session is `null` for anonymous requests
   @Post('/cats')
-  @Public()
-  sayHello(@Session() session: UserSession, @UserId() userId: string, @Body() body: any) {
-    console.log({ session, userId, body });
-    return { message: this.appService.getCat() };
+  @AllowAnonymous()
+  sayHello(
+    @Session() session: UserSession<Auth> | null,
+    @UserId() userId: string | undefined,
+    @Body() body: unknown,
+  ) {
+    return {
+      message: this.appService.getCat(),
+      authenticated: Boolean(session && userId),
+      body,
+    };
   }
 }
 ```
+
+`Session`, `AllowAnonymous`, `OptionalAuth`, `Roles` and `UserSession` come from `@thallesp/nestjs-better-auth`; `UserId` is a small helper in `src/auth/user-id.decorator.ts`.
 
 ---
 
@@ -243,28 +285,30 @@ Set in `src/main.ts`:
 ```ts
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bodyParser: false,
+    bodyParser: false, // required: Better Auth reads the raw body itself
   });
   app.set('query parser', 'extended');
 
-  const trustedOrigins = (process.env.TRUSTED_ORIGINS as string).split(',');
-
   app.enableCors({
-    origin: trustedOrigins,
+    origin: parseTrustedOrigins(process.env.TRUSTED_ORIGINS),
     credentials: true,
   });
 
-  app.setGlobalPrefix('api', { exclude: ['/api/auth/{*path}'] });
+  // Better Auth routes (/api/auth/*) are excluded from the prefix automatically
+  app.setGlobalPrefix('api');
 
   await app.listen(process.env.PORT ?? 3000);
 }
+await bootstrap();
 ```
+
+> Keep `bodyParser: false`. `AuthModule` re-adds the JSON and urlencoded parsers for all non-auth routes.
 
 ---
 
 ## 🧩 Frontend Integration (Next.js)
 
-Use `@better-auth/react` to connect your frontend:
+Use `better-auth/react` to connect your frontend:
 
 ```ts
 import { createAuthClient } from 'better-auth/react';

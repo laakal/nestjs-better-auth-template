@@ -55,3 +55,6 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .vscode/*
 .vscode/settings.json
+
+# TypeScript incremental build info
+*.tsbuildinfo
