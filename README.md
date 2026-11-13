@@ -2,9 +2,9 @@
 
 This project demonstrates how to integrate [Better Auth](https://better-auth.dev/) into a NestJS application for streamlined and flexible authentication.
 
-The NestJS integration is provided by [`@thallesp/nestjs-better-auth`](https://github.com/ThallesP/nestjs-better-auth).
+The NestJS integration lives in this repository (`src/auth`) — it talks to Better Auth directly, with no third-party wrapper package.
 
-**Special thanks to [ThallesP](https://github.com/ThallesP) for their work on it!**
+**Special thanks to [ThallesP](https://github.com/ThallesP), whose [nestjs-better-auth](https://github.com/ThallesP/nestjs-better-auth) inspired the integration!**
 
 ---
 
@@ -34,10 +34,10 @@ The NestJS integration is provided by [`@thallesp/nestjs-better-auth`](https://g
 ## 🧰 Project Information
 
 - **Framework:** NestJS v12 (ESM, TypeScript 6)
-- **Auth:** Better Auth v1.7 (also verified against v1.8 beta) via `@thallesp/nestjs-better-auth` v2
+- **Auth:** Better Auth v1.7 (also verified against v1.8 beta), integrated natively in `src/auth`
 - **HTTP Framework:** Express v5 (integrated in NestJS)
 - **Database Adapter:** MongoDB
-- **Tests:** Vitest
+- **Tests:** Vitest (e2e tests run against an in-memory MongoDB)
 - **Linting:** oxlint (type-aware), formatting with Prettier
 
 > The project is an ES module (`"type": "module"`), which is the NestJS 12 default. Relative imports need a `.js` extension, e.g. `import { AppModule } from './app.module.js'`.
@@ -102,7 +102,7 @@ Ensure the following are installed:
 
   ```bash
   npm test          # unit tests
-  npm run test:e2e  # e2e tests
+  npm run test:e2e  # e2e tests (full sign-up / sign-in flow, no MongoDB needed)
   ```
 
 ---
@@ -145,19 +145,45 @@ export function createAuth(env: NodeJS.ProcessEnv = process.env) {
 export type Auth = ReturnType<typeof createAuth>;
 ```
 
-It is wired into NestJS in `src/app.module.ts`. `createAuth` is a factory so the environment is read after `ConfigModule` has loaded `.env`:
+It is wired into NestJS by `AuthModule` (`src/auth/auth.module.ts`), imported in `src/app.module.ts`. `createAuth` is a factory so the environment is read after `ConfigModule` has loaded `.env` — keep `ConfigModule` first:
 
 ```ts
-AuthModule.forRootAsync({
-  imports: [ConfigModule],
-  useFactory: () => ({
-    auth: createAuth(),
+imports: [
+  ConfigModule.forRoot({ envFilePath: `.env`, isGlobal: true }),
+  AuthModule.forRoot({
     disableTrustedOriginsCors: true, // CORS is configured in main.ts
   }),
-}),
+],
 ```
 
-`AuthModule` mounts the Better Auth handler on `/api/auth/*`, registers a global `AuthGuard` and exports `AuthService` (inject it to call `authService.api.*`). Hooks can be added with the `@Hook()`, `@BeforeHook()` and `@AfterHook()` decorators — see the [library README](https://github.com/ThallesP/nestjs-better-auth#readme).
+Everything in `src/auth` is plain code you own and can change:
+
+| File | Purpose |
+| --- | --- |
+| `auth.ts` | Better Auth configuration (`createAuth`) |
+| `auth.module.ts` | Mounts the Better Auth handler on `/api/auth/*`, body parsing, CORS, hooks |
+| `auth.guard.ts` | `AuthGuard` and the `UserSession` type |
+| `auth.service.ts` | `AuthService` — inject it to call `authService.api.*` |
+| `decorators.ts` | `@Session()`, `@Public()`, `@Optional()`, `@Hook()`, `@BeforeHook()`, `@AfterHook()` |
+| `user-id.decorator.ts` | `@UserId()` |
+| `api-error-exception-filter.ts` | Turns Better Auth `APIError`s into HTTP responses |
+
+`AuthModule.forRoot()` options: `disableExceptionFilter`, `disableTrustedOriginsCors`, `disableBodyParser`.
+
+Hooks run around a Better Auth route and can use injected providers:
+
+```ts
+@Hook()
+@Injectable()
+export class SignUpHooks {
+  constructor(private readonly mailer: MailerService) {}
+
+  @AfterHook('/sign-up/email')
+  async welcome(ctx: AuthHookContext) {
+    // ...
+  }
+}
+```
 
 **Supported Providers:**
 
@@ -241,16 +267,17 @@ For more details, refer to [Better Auth Cookies Documentation](https://www.bette
 
 ## 🛡️ Protecting Routes
 
-`AuthModule` registers a global `AuthGuard`, so **every route is protected by default** — no `@UseGuards()` needed. Opt out per route or controller with `@AllowAnonymous()` (or `@OptionalAuth()`). See `app.controller.ts`:
+Add `@UseGuards(AuthGuard)` to a controller (or a single route) to require a session. Opt out per route with `@Public()`, or use `@Optional()` to allow both. See `app.controller.ts`:
 
 ```ts
 @Controller()
+@UseGuards(AuthGuard)
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
   // Protected: responds 401 without a session
   @Get('/cats')
-  getCats(@Session() session: UserSession<Auth>, @UserId() userId: string) {
+  getCats(@Session() session: UserSession, @UserId() userId: string) {
     return {
       message: this.appService.getCat(),
       userId,
@@ -260,9 +287,9 @@ export class AppController {
 
   // Public: the session is `null` for anonymous requests
   @Post('/cats')
-  @AllowAnonymous()
+  @Public()
   sayHello(
-    @Session() session: UserSession<Auth> | null,
+    @Session() session: UserSession | null,
     @UserId() userId: string | undefined,
     @Body() body: unknown,
   ) {
@@ -275,7 +302,11 @@ export class AppController {
 }
 ```
 
-`Session`, `AllowAnonymous`, `OptionalAuth`, `Roles` and `UserSession` come from `@thallesp/nestjs-better-auth`; `UserId` is a small helper in `src/auth/user-id.decorator.ts`.
+`AuthModule` is global, so `AuthGuard` can be used in any module without extra imports. To protect every route by default, register it once as a global guard:
+
+```ts
+providers: [{ provide: APP_GUARD, useExisting: AuthGuard }],
+```
 
 ---
 
@@ -295,7 +326,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Better Auth routes (/api/auth/*) are excluded from the prefix automatically
+  // Better Auth is mounted on /api/auth/* by AuthModule, outside the global prefix
   app.setGlobalPrefix('api');
 
   await app.listen(process.env.PORT ?? 3000);
@@ -303,7 +334,7 @@ async function bootstrap() {
 await bootstrap();
 ```
 
-> Keep `bodyParser: false`. `AuthModule` re-adds the JSON and urlencoded parsers for all non-auth routes.
+> Keep `bodyParser: false`. `AuthModule` adds the JSON and urlencoded parsers back for all non-auth routes.
 
 ---
 

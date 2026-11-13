@@ -25,8 +25,8 @@
     "@nestjs/config": "^12.1.1",
     "@nestjs/core": "^12.5.0",
     "@nestjs/platform-express": "^12.5.0",
-    "@thallesp/nestjs-better-auth": "^2.8.0",
     "better-auth": "^1.7.23",
+    "express": "^5.3.0",
     "mongodb": "^7.9.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
@@ -39,6 +39,7 @@
     "@types/node": "^26.6.6",
     "@types/supertest": "^7.2.1",
     "@vitest/coverage-v8": "^5.1.0",
+    "mongodb-memory-server": "^11.3.0",
     "oxlint": "^1.93.0",
     "oxlint-tsgolint": "^7.0.2007",
     "prettier": "^3.10.1",

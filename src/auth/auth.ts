@@ -7,7 +7,7 @@ import { MongoClient } from 'mongodb';
  *
  * It is a factory (instead of a top-level `export const auth`) so that the
  * environment is read after `ConfigModule` has loaded the `.env` file.
- * See `AuthModule.forRootAsync` in `app.module.ts`.
+ * It is called by `AuthModule.forRoot()` in `auth.module.ts`.
  */
 export function createAuth(env: NodeJS.ProcessEnv = process.env) {
   const isProd = env.NODE_ENV === 'production';
@@ -53,7 +53,7 @@ export function createAuth(env: NodeJS.ProcessEnv = process.env) {
         clientSecret: env.GOOGLE_CLIENT_SECRET as string,
       },
     },
-    // Required by @thallesp/nestjs-better-auth to register @Hook() providers
+    // Required to register @Hook() providers (see decorators.ts)
     hooks: {},
     // cross domain cookies
     ...(isProd

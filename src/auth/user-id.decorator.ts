@@ -1,5 +1,5 @@
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
-import type { UserSession } from '@thallesp/nestjs-better-auth';
+import type { UserSession } from './auth.guard.js';
 import type { Request } from 'express';
 
 /**
