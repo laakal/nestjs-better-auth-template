@@ -38,6 +38,7 @@ The NestJS integration is provided by [`@thallesp/nestjs-better-auth`](https://g
 - **HTTP Framework:** Express v5 (integrated in NestJS)
 - **Database Adapter:** MongoDB
 - **Tests:** Vitest
+- **Linting:** oxlint (type-aware), formatting with Prettier
 
 > The project is an ES module (`"type": "module"`), which is the NestJS 12 default. Relative imports need a `.js` extension, e.g. `import { AppModule } from './app.module.js'`.
 
@@ -47,7 +48,7 @@ The NestJS integration is provided by [`@thallesp/nestjs-better-auth`](https://g
 
 Ensure the following are installed:
 
-- **Node.js** v22.12+ (v22.22.3+ or v24.15+ to use the `nest generate` CLI commands)
+- **Node.js** v26 LTS or newer (see `.nvmrc`)
 - **npm** (comes with Node.js)
 - **MongoDB** (running instance required)
 
